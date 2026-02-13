@@ -1,0 +1,89 @@
+{
+    "sidebar": {
+        "trending": "热门榜单",
+        "search": "智能搜索",
+        "library": "本地收藏",
+        "settings": "设置"
+    },
+    "trending": {
+        "today": "本日",
+        "week": "本周",
+        "month": "本月",
+        "syncing": "同步 GitHub 趋势中...",
+        "projects": "个项目"
+    },
+    "search": {
+        "title": "智能搜索",
+        "placeholder": "输入您的技术需求（例如：适合初学者的 Rust AI 框架）",
+        "ai_rewrite": "AI 智能改写",
+        "searching": "正在搜索 GitHub...",
+        "rewriting": "AI 正在优化查询...",
+        "no_results": "未找到结果。",
+        "use_this_query": "使用此查询",
+        "ai_optimized": "AI 优化后的查询",
+        "explore": "发现开源世界",
+        "explore_desc": "尝试输入自然语言描述，例如“适合初学者的 Rust 项目”或“高性能 Go Web 框架”。如果开启，AI 将自动优化您的搜索意图。"
+    },
+    "repo": {
+        "ai_summarized": "AI 已总结",
+        "no_description": "暂无描述。",
+        "stars": "星标",
+        "forks": "分叉"
+    },
+    "insight": {
+        "title": "AI 深度洞察",
+        "analyzing": "分析中",
+        "deep_mode": "深度模式",
+        "regenerate": "重新生成",
+        "enable_deep_context": "启用深度上下文分析",
+        "deep_context_desc": "将抓取目录结构和配置文件，通过更多 Token 提供精准架构分析。",
+        "config_api_key": "配置 API Key 以开启技术洞察",
+        "go_to_settings": "前往设置 →",
+        "click_to_generate": "点击生成 AI 深度洞察",
+        "generate_btn": "生成 AI 洞察 ✨",
+        "explore_trending": "探索 GitHub 热门趋势",
+        "favorite": "收藏",
+        "unfavorite": "取消收藏"
+    },
+    "settings": {
+        "title": "设置",
+        "subtitle": "管理 AI 模型配置及应用偏好",
+        "model_configs": "模型配置",
+        "add_config": "添加模型配置",
+        "active": "激活",
+        "activate": "激活此配置",
+        "edit": "编辑",
+        "delete": "删除",
+        "test": "测试连接",
+        "save": "保存配置",
+        "cancel": "取消",
+        "provider": "提供商",
+        "api_key": "API Key",
+        "api_url": "API 接口地址",
+        "model_name": "默认模型",
+        "config_name": "配置名称",
+        "language": "语言",
+        "test_connection": "测试连接",
+        "testing": "测试中...",
+        "success": "连接成功！",
+        "failed": "连接失败",
+        "delete_success": "配置已删除",
+        "delete_failed": "删除失败",
+        "save_failed": "保存失败",
+        "update_failed": "更新失败",
+        "active_success": "已成功激活配置: "
+    },
+    "common": {
+        "on": "开启",
+        "off": "关闭"
+    },
+    "topic": {
+        "all": "全部",
+        "ai_llm": "AI / LLM",
+        "web_app": "Web / App",
+        "tools_cli": "工具 / CLI",
+        "systems_os": "系统 / OS",
+        "mobile": "移动端",
+        "general": "综合"
+    }
+}

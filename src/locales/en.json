@@ -1,0 +1,89 @@
+{
+    "sidebar": {
+        "trending": "Trending",
+        "search": "Smart Search",
+        "library": "Library",
+        "settings": "Settings"
+    },
+    "trending": {
+        "today": "Today",
+        "week": "Week",
+        "month": "Month",
+        "syncing": "Syncing GitHub Trends...",
+        "projects": "projects"
+    },
+    "search": {
+        "title": "Smart Search",
+        "placeholder": "Enter your technical needs (e.g., Rust AI framework for beginners)",
+        "ai_rewrite": "AI Rewrite",
+        "searching": "Searching GitHub...",
+        "rewriting": "AI Rewriting Query...",
+        "no_results": "No results found.",
+        "use_this_query": "Use this query",
+        "ai_optimized": "AI Optimized Query",
+        "explore": "Explore the Open Source World",
+        "explore_desc": "Try entering a natural language description, e.g., 'Rust projects for beginners' or 'High-performance Go Web Framework'. AI will automatically optimize your search intent if enabled."
+    },
+    "repo": {
+        "ai_summarized": "AI Summarized",
+        "no_description": "No description provided.",
+        "stars": "stars",
+        "forks": "forks"
+    },
+    "insight": {
+        "title": "AI Deep Insight",
+        "analyzing": "Analyzing",
+        "deep_mode": "Deep Mode",
+        "regenerate": "Regenerate",
+        "enable_deep_context": "Enable Deep Context Analysis",
+        "deep_context_desc": "Will crawl directory structure and config files to provide precise architecture analysis.",
+        "config_api_key": "Configure API Key to enable insights",
+        "go_to_settings": "Go to Settings →",
+        "click_to_generate": "Click to generate AI deep insight",
+        "generate_btn": "Generate AI Insight ✨",
+        "explore_trending": "Explore GitHub Trending",
+        "favorite": "Favorite",
+        "unfavorite": "Unfavorite"
+    },
+    "settings": {
+        "title": "Settings",
+        "subtitle": "Manage AI model configurations and app preferences",
+        "model_configs": "Model Configurations",
+        "add_config": "Add New Configuration",
+        "active": "Active",
+        "activate": "Activate",
+        "edit": "Edit",
+        "delete": "Delete",
+        "test": "Test",
+        "save": "Save",
+        "cancel": "Cancel",
+        "provider": "Provider",
+        "api_key": "API Key",
+        "api_url": "API Base URL (Optional)",
+        "model_name": "Model Name",
+        "config_name": "Config Name",
+        "language": "Language",
+        "test_connection": "Test Connection",
+        "testing": "Testing...",
+        "success": "Connection successful!",
+        "failed": "Connection failed",
+        "delete_success": "Configuration deleted",
+        "delete_failed": "Delete failed",
+        "save_failed": "Save failed",
+        "update_failed": "Update failed",
+        "active_success": "Active configuration set to: "
+    },
+    "common": {
+        "on": "ON",
+        "off": "OFF"
+    },
+    "topic": {
+        "all": "All",
+        "ai_llm": "AI / LLM",
+        "web_app": "Web / App",
+        "tools_cli": "Tools / CLI",
+        "systems_os": "Systems / OS",
+        "mobile": "Mobile",
+        "general": "General"
+    }
+}
