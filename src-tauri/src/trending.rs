@@ -1,7 +1,7 @@
 use scraper::{Html, Selector};
 use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Serialize, Deserialize, Clone)]
+#[derive(Debug, Serialize, Deserialize, Clone, sqlx::FromRow)]
 pub struct TrendingRepo {
     pub author: String,
     pub name: String,
@@ -12,6 +12,14 @@ pub struct TrendingRepo {
     pub stars_today: String,
     pub url: String,
     pub topic: String,
+    #[sqlx(skip)]
+    pub built_by: Vec<String>,
+    #[sqlx(skip)]
+    pub topics: Vec<String>,
+    #[sqlx(skip)]
+    pub pushed_at: String,
+    #[sqlx(skip)]
+    pub license: String,
 }
 
 fn get_topic(name: &str, desc: &str) -> String {
@@ -83,6 +91,7 @@ pub async fn fetch_trending(language: Option<String>, since: &str) -> Result<Vec
     let stars_selector = Selector::parse("a.Link--muted:nth-of-type(1)").unwrap();
     let forks_selector = Selector::parse("a.Link--muted:nth-of-type(2)").unwrap();
     let stars_today_selector = Selector::parse("span.float-sm-right").unwrap();
+    let built_by_selector = Selector::parse("span.d-inline-block.mr-3 img.avatar").unwrap();
 
     let mut repos = Vec::new();
 
@@ -123,6 +132,11 @@ pub async fn fetch_trending(language: Option<String>, since: &str) -> Result<Vec
 
         let topic = get_topic(&name, &description);
         
+        let built_by = repo_node.select(&built_by_selector)
+            .map(|img| img.value().attr("src").unwrap_or_default().to_string())
+            .filter(|src| !src.is_empty())
+            .collect();
+
         repos.push(TrendingRepo {
             author,
             name,
@@ -133,6 +147,10 @@ pub async fn fetch_trending(language: Option<String>, since: &str) -> Result<Vec
             stars_today,
             url,
             topic,
+            built_by,
+            topics: Vec::new(),
+            pushed_at: "".to_string(),
+            license: "".to_string(),
         });
     }
 

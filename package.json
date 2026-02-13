@@ -5,6 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
+    "predev": "lsof -ti:1420 | xargs kill -9 2>/dev/null || true",
     "build": "tsc && vite build",
     "preview": "vite preview",
     "tauri": "tauri"
