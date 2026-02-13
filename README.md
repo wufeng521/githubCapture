@@ -6,7 +6,6 @@
 
 GitHub Capture is a desktop-based tool for exploring and analyzing open-source projects. It combines natural language search with AI-driven insights to help developers, tech enthusiasts, and product managers precisely discover the most valuable technical assets from the vast ocean of GitHub projects.
 
-![GitHub Capture](/path/to/screenshot.png) *(Replace with your generated app screenshot)*
 
 ## 🚀 Core Features
 
