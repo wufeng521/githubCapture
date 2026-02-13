@@ -34,18 +34,25 @@ function App() {
   const [repos, setRepos] = useState<TrendingRepo[]>([]);
   const [selectedRepo, setSelectedRepo] = useState<TrendingRepo | null>(null);
   const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [_error, setError] = useState<string | null>(null);
   const [apiKey, setApiKey] = useState("");
   const [insight, setInsight] = useState("");
   const [isSummarizing, setIsSummarizing] = useState(false);
 
   // Search State
-  const [isSearchOpen, setIsSearchOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const [searchResults, setSearchResults] = useState<TrendingRepo[]>([]);
   const [isSearching, setIsSearching] = useState(false);
+  const [searchError, setSearchError] = useState<string | null>(null);
+
+  // AI Rewrite State
+  const [aiRewriteEnabled, setAiRewriteEnabled] = useState(true);
+  const [rewrittenQuery, setRewrittenQuery] = useState("");
+  const [isRewriting, setIsRewriting] = useState(false);
+  const [rewriteError, setRewriteError] = useState<string | null>(null);
 
   const insightRef = useRef("");
+  const searchInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     initStore();
@@ -54,10 +61,8 @@ function App() {
     const handleKeyDown = (e: KeyboardEvent) => {
       if ((e.metaKey || e.ctrlKey) && e.key === "k") {
         e.preventDefault();
-        setIsSearchOpen(prev => !prev);
-      }
-      if (e.key === "Escape") {
-        setIsSearchOpen(false);
+        setActiveTab("search");
+        setTimeout(() => searchInputRef.current?.focus(), 100);
       }
     };
     window.addEventListener("keydown", handleKeyDown);
@@ -71,16 +76,16 @@ function App() {
   }, [activeTab, selectedSince]);
 
   useEffect(() => {
-    if (selectedRepo && apiKey) {
-      handleSummarize(selectedRepo);
-    } else {
+    if (selectedRepo) {
+      // 仅清空旧 insight，不自动触发 summarize
+      // 来避免异步状态更新引发重渲染影响 UI 交互
       setInsight("");
     }
   }, [selectedRepo]);
 
   const initStore = async () => {
     try {
-      const store = await load("settings.json", { autoSave: true });
+      const store = await load("settings.json", { autoSave: true, defaults: {} });
       const savedKey = await store.get<string>("openai_api_key");
       if (savedKey) setApiKey(savedKey);
     } catch (e) {
@@ -91,7 +96,7 @@ function App() {
   const saveApiKey = async (val: string) => {
     setApiKey(val);
     try {
-      const store = await load("settings.json", { autoSave: true });
+      const store = await load("settings.json", { autoSave: true, defaults: {} });
       await store.set("openai_api_key", val);
     } catch (e) {
       console.error("Save API key failed:", e);
@@ -120,25 +125,60 @@ function App() {
     }
   };
 
+  // 执行搜索
   const handleSearch = async () => {
-    if (!searchQuery.trim()) return;
+    const finalQuery = aiRewriteEnabled && rewrittenQuery ? rewrittenQuery : searchQuery;
+    if (!finalQuery.trim()) return;
     setIsSearching(true);
+    setSearchError(null);
     try {
-      const result: TrendingRepo[] = await invoke("smart_search", {
-        query: searchQuery,
-        apiKey
+      const result: TrendingRepo[] = await invoke("search_github", {
+        query: finalQuery
       });
       setSearchResults(result);
       if (result.length > 0) {
-        setActiveTab("search");
-        setIsSearchOpen(false);
-        setRepos(result); // Switch trending list to search results
         setSelectedRepo(result[0]);
       }
-    } catch (e) {
+    } catch (e: any) {
       console.error("Search failed:", e);
+      setSearchError(e.toString());
     } finally {
       setIsSearching(false);
+    }
+  };
+
+  // 一键搜索：若开启 AI 先改写再搜索，否则直接搜索
+  const handleFullSearch = async () => {
+    if (!searchQuery.trim()) return;
+    if (aiRewriteEnabled && apiKey) {
+      setIsRewriting(true);
+      setRewriteError(null);
+      setRewrittenQuery("");
+      try {
+        const rewritten: string = await invoke("ai_rewrite_query", {
+          query: searchQuery,
+          apiKey
+        });
+        setRewrittenQuery(rewritten);
+        // 自动使用改写后的查询进行搜索
+        setIsSearching(true);
+        setSearchError(null);
+        const result: TrendingRepo[] = await invoke("search_github", {
+          query: rewritten
+        });
+        setSearchResults(result);
+        if (result.length > 0) {
+          setSelectedRepo(result[0]);
+        }
+      } catch (e: any) {
+        console.error("Full search failed:", e);
+        setSearchError(e.toString());
+      } finally {
+        setIsRewriting(false);
+        setIsSearching(false);
+      }
+    } else {
+      await handleSearch();
     }
   };
 
@@ -182,45 +222,226 @@ function App() {
     }
   };
 
-  return (
-    <div className="flex h-screen bg-apple-bg select-none font-sans text-apple-text overflow-hidden">
-      {/* Search Modal */}
-      {isSearchOpen && (
-        <div className="fixed inset-0 z-50 flex items-start justify-center pt-[15vh] px-4 backdrop-blur-sm bg-black/10 animate-in fade-in duration-200">
-          <div className="w-full max-w-2xl bg-white border border-apple-border rounded-2xl shadow-2xl overflow-hidden animate-in slide-in-from-top-4 duration-300">
-            <div className="relative p-6">
-              <div className="absolute left-10 top-1/2 -translate-y-1/2 text-apple-accent">
-                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
+  // ============ 搜索面板渲染 ============
+  const renderSearchPanel = () => (
+    <section className="flex-1 flex flex-col overflow-hidden bg-white">
+      {/* 搜索输入区 */}
+      <div className="p-8 border-b border-apple-border/30 bg-apple-bg/5">
+        <div className="max-w-3xl mx-auto">
+          {/* 标题 */}
+          <div className="flex items-center space-x-3 mb-6">
+            <div className="w-10 h-10 bg-apple-accent rounded-2xl flex items-center justify-center shadow-md">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                <circle cx="11" cy="11" r="8" />
+                <path d="m21 21-4.3-4.3" />
+              </svg>
+            </div>
+            <div>
+              <h2 className="text-xl font-bold tracking-tight text-apple-text">智能搜索</h2>
+              <p className="text-[11px] text-apple-secondary mt-0.5">输入自然语言描述或关键词，精准发现全球开源项目</p>
+            </div>
+          </div>
+
+          {/* 搜索框 + 按钮 */}
+          <div className="flex space-x-3">
+            <div className="flex-1 relative">
+              <div className="absolute left-4 top-1/2 -translate-y-1/2 text-apple-secondary/40">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
                   <circle cx="11" cy="11" r="8" />
                   <path d="m21 21-4.3-4.3" />
                 </svg>
               </div>
               <input
+                ref={searchInputRef}
                 autoFocus
                 value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                onKeyDown={(e) => e.key === "Enter" && handleSearch()}
-                placeholder="寻找适合学习的 Rust 项目、AI 意图搜索..."
-                className="w-full pl-12 pr-4 py-4 text-lg bg-apple-bg/50 border border-apple-border/50 rounded-xl outline-none focus:ring-2 focus:ring-apple-accent/20 font-medium placeholder:text-apple-secondary/50"
+                onChange={(e) => {
+                  setSearchQuery(e.target.value);
+                  setRewrittenQuery("");
+                  setRewriteError(null);
+                }}
+                onKeyDown={(e) => e.key === "Enter" && handleFullSearch()}
+                placeholder="例如：适合初学者的 Rust AI 框架、最近火爆的 React UI 库..."
+                className="w-full pl-12 pr-4 py-4 text-[15px] bg-white border border-apple-border rounded-2xl outline-none focus:ring-2 focus:ring-apple-accent/20 focus:border-apple-accent/30 font-medium placeholder:text-apple-secondary/40 shadow-sm transition-all select-text"
               />
             </div>
-            <div className="px-6 pb-6 pt-2 border-t border-apple-border/30 bg-apple-bg/5 flex justify-between items-center">
-              <div className="flex items-center space-x-4 text-[10px] text-apple-secondary font-bold uppercase tracking-widest">
-                <span className="flex items-center"><button className="bg-white border shadow-sm px-1.5 py-0.5 rounded mr-1.5 font-sans">Enter</button> 智能检索</span>
-                <span className="flex items-center"><button className="bg-white border shadow-sm px-1.5 py-0.5 rounded mr-1.5 font-sans">Esc</button> 关闭窗口</span>
-              </div>
-              {isSearching && (
-                <div className="flex items-center space-x-2 text-apple-accent">
-                  <div className="w-3 h-3 border-2 border-apple-accent/20 border-t-apple-accent rounded-full animate-spin"></div>
-                  <span className="text-[10px] font-black uppercase tracking-tighter">AI Processing Intent...</span>
-                </div>
+            <button
+              onClick={handleFullSearch}
+              disabled={isSearching || isRewriting || !searchQuery.trim()}
+              className="px-8 py-4 bg-apple-accent text-white rounded-2xl text-sm font-bold shadow-md hover:shadow-lg hover:bg-blue-700 active:scale-[0.98] disabled:opacity-40 disabled:cursor-not-allowed transition-all flex items-center space-x-2 whitespace-nowrap"
+            >
+              {isSearching || isRewriting ? (
+                <>
+                  <svg className="animate-spin" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M21 12a9 9 0 1 1-6.219-8.56" />
+                  </svg>
+                  <span>{isRewriting ? "AI 分析中..." : "搜索中..."}</span>
+                </>
+              ) : (
+                <>
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                    <circle cx="11" cy="11" r="8" />
+                    <path d="m21 21-4.3-4.3" />
+                  </svg>
+                  <span>搜索</span>
+                </>
               )}
+            </button>
+          </div>
+
+          {/* AI 改写开关区域 */}
+          <div className="mt-4 flex items-center justify-between">
+            <div className="flex items-center space-x-3">
+              {/* Toggle Switch */}
+              <button
+                onClick={() => {
+                  setAiRewriteEnabled(!aiRewriteEnabled);
+                  setRewrittenQuery("");
+                  setRewriteError(null);
+                }}
+                className={`relative w-11 h-6 rounded-full transition-colors duration-200 ${aiRewriteEnabled ? "bg-apple-accent" : "bg-black/10"}`}
+              >
+                <span className={`absolute top-0.5 left-0.5 w-5 h-5 bg-white rounded-full shadow-md transition-transform duration-200 ${aiRewriteEnabled ? "translate-x-5" : "translate-x-0"}`} />
+              </button>
+              <div className="flex items-center space-x-1.5">
+                <span className="text-sm font-medium text-apple-text">AI 智能改写</span>
+                <span className="text-[10px] text-apple-secondary bg-black/5 px-1.5 py-0.5 rounded-md font-medium">
+                  {aiRewriteEnabled ? "已开启" : "已关闭"}
+                </span>
+              </div>
+            </div>
+            {!apiKey && aiRewriteEnabled && (
+              <button
+                onClick={() => setActiveTab("settings")}
+                className="text-[11px] text-apple-accent font-semibold hover:underline"
+              >
+                需要配置 API Key →
+              </button>
+            )}
+          </div>
+
+          {/* AI 改写预览 */}
+          {aiRewriteEnabled && rewrittenQuery && (
+            <div className="mt-4 bg-apple-accent/5 border border-apple-accent/15 rounded-xl p-4">
+              <div className="flex items-center space-x-2 mb-2">
+                <span className="text-[10px] font-bold text-apple-accent uppercase tracking-widest">✨ AI 优化查询</span>
+              </div>
+              <div className="flex items-center space-x-3">
+                <code className="flex-1 text-sm text-apple-text bg-white/80 px-3 py-2 rounded-lg border border-apple-border/20 font-mono">
+                  {rewrittenQuery}
+                </code>
+                <button
+                  onClick={handleSearch}
+                  className="px-4 py-2 text-[11px] font-bold text-apple-accent border border-apple-accent/30 rounded-lg hover:bg-apple-accent/5 transition-all whitespace-nowrap"
+                >
+                  使用此查询
+                </button>
+              </div>
+            </div>
+          )}
+
+          {/* 改写中的加载状态 */}
+          {isRewriting && (
+            <div className="mt-4 flex items-center space-x-3 text-apple-accent">
+              <div className="w-4 h-4 border-2 border-apple-accent/20 border-t-apple-accent rounded-full animate-spin" />
+              <span className="text-[12px] font-semibold">AI 正在理解您的搜索意图并优化查询条件...</span>
+            </div>
+          )}
+
+          {/* 错误提示 */}
+          {(searchError || rewriteError) && (
+            <div className="mt-4 bg-red-50 border border-red-200 rounded-xl p-3 text-sm text-red-600">
+              {rewriteError || searchError}
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* 搜索结果区 */}
+      <div className="flex-1 overflow-y-auto">
+        {searchResults.length > 0 ? (
+          <div className="max-w-3xl mx-auto p-8">
+            <div className="flex items-center justify-between mb-6">
+              <div className="flex items-center space-x-2">
+                <span className="text-[10px] font-black text-apple-accent uppercase tracking-widest">搜索结果</span>
+                <span className="text-[10px] text-apple-secondary bg-black/5 px-2 py-0.5 rounded-full font-bold">
+                  {searchResults.length} 个项目
+                </span>
+              </div>
+            </div>
+
+            <div className="space-y-3">
+              {searchResults.map((repo) => (
+                <div
+                  key={repo.url}
+                  onClick={() => setSelectedRepo(repo)}
+                  className={`p-5 rounded-2xl cursor-pointer transition-all border ${selectedRepo?.url === repo.url
+                    ? "bg-apple-accent/5 border-apple-accent/20 shadow-md"
+                    : "bg-white border-apple-border/30 hover:border-apple-accent/20 hover:shadow-sm"
+                    }`}
+                >
+                  <div className="flex items-start justify-between">
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center space-x-2 mb-1.5">
+                        <span className="px-1.5 py-0.5 rounded text-[9px] font-bold bg-apple-accent/10 text-apple-accent uppercase tracking-tight">
+                          {repo.language}
+                        </span>
+                      </div>
+                      <div className="font-bold text-sm text-apple-text tracking-tight leading-tight">
+                        {repo.author} / {repo.name}
+                      </div>
+                      <div className="text-[11px] text-apple-secondary line-clamp-2 mt-1.5 leading-relaxed opacity-80">
+                        {repo.description || "No description provided."}
+                      </div>
+                    </div>
+                    <div className="flex items-center space-x-4 ml-4 text-[10px] text-apple-secondary font-bold font-sans shrink-0">
+                      <div className="flex items-center">
+                        <span className="mr-1 opacity-60">★</span>
+                        {repo.stars}
+                      </div>
+                      <div className="flex items-center">
+                        <span className="mr-1 opacity-40">⑂</span>
+                        {repo.forks}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              ))}
             </div>
           </div>
-          <div className="absolute inset-0 -z-10" onClick={() => setIsSearchOpen(false)}></div>
-        </div>
-      )}
+        ) : isSearching ? (
+          <div className="flex-1 flex flex-col items-center justify-center py-32">
+            <div className="w-10 h-10 rounded-full border-2 border-apple-accent/20 border-t-apple-accent animate-spin mb-4" />
+            <p className="text-apple-secondary text-sm font-medium">正在搜索全球开源项目...</p>
+          </div>
+        ) : (
+          <div className="flex-1 flex flex-col items-center justify-center py-32 text-apple-secondary">
+            <div className="w-20 h-20 bg-apple-bg rounded-3xl flex items-center justify-center mb-6 text-3xl">
+              🔍
+            </div>
+            <h3 className="text-base font-bold text-apple-text mb-2 tracking-tight">发现开源世界</h3>
+            <p className="text-[12px] text-apple-secondary/70 max-w-sm text-center leading-relaxed">
+              尝试输入自然语言描述，例如"适合初学者的 Rust 项目"或"高性能 Go Web 框架"。
+              {aiRewriteEnabled && " AI 将自动优化您的搜索意图。"}
+            </p>
+            <div className="flex items-center space-x-4 mt-6 text-[10px] text-apple-secondary/50 font-medium">
+              <span className="flex items-center space-x-1">
+                <kbd className="px-1.5 py-0.5 bg-white border border-apple-border rounded shadow-sm font-sans">⌘K</kbd>
+                <span>快速搜索</span>
+              </span>
+              <span className="flex items-center space-x-1">
+                <kbd className="px-1.5 py-0.5 bg-white border border-apple-border rounded shadow-sm font-sans">Enter</kbd>
+                <span>发起搜索</span>
+              </span>
+            </div>
+          </div>
+        )}
+      </div>
+    </section>
+  );
 
+  return (
+    <div className="flex h-screen bg-apple-bg font-sans text-apple-text overflow-hidden">
       {/* Sidebar */}
       <aside className="w-64 border-r border-apple-border flex flex-col bg-white/50 backdrop-blur-md">
         <div className="p-6">
@@ -235,7 +456,10 @@ function App() {
             <span className="text-sm font-medium">热门榜单</span>
           </button>
           <button
-            onClick={() => setIsSearchOpen(true)}
+            onClick={() => {
+              setActiveTab("search");
+              setTimeout(() => searchInputRef.current?.focus(), 100);
+            }}
             className={`w-full text-left rounded-md flex items-center px-4 py-2 transition-colors ${activeTab === "search" ? "bg-black/5 text-apple-text shadow-sm" : "text-apple-secondary hover:bg-black/5"}`}
           >
             <span className="text-sm font-medium flex-1">智能搜索</span>
@@ -289,14 +513,19 @@ function App() {
               </div>
             </div>
           </section>
+        ) : activeTab === "search" ? (
+          /* ====== 搜索视图：搜索面板 + 详情面板 ====== */
+          <>
+            {renderSearchPanel()}
+          </>
         ) : (
           <>
-            {/* List Pane */}
+            {/* List Pane (Trending) */}
             <section className="w-[420px] border-r border-apple-border flex flex-col overflow-hidden">
               <header className="p-5 bg-white/90 backdrop-blur-md sticky top-0 z-10 border-b border-apple-border/30">
                 <div className="flex justify-between items-center mb-5">
                   <div className="flex items-center space-x-3 bg-black/5 p-1 rounded-full">
-                    {activeTab === "trending" ? SINCE_OPTIONS.map(opt => (
+                    {SINCE_OPTIONS.map(opt => (
                       <button
                         key={opt.value}
                         onClick={() => setSelectedSince(opt.value)}
@@ -304,33 +533,22 @@ function App() {
                       >
                         {opt.label}
                       </button>
-                    )) : (
-                      <div className="px-3 py-1 text-[10px] font-black text-apple-accent uppercase flex items-center">
-                        <span className="w-1.5 h-1.5 bg-apple-accent rounded-full mr-2 animate-pulse"></span>
-                        Search Results
-                      </div>
-                    )}
+                    ))}
                   </div>
 
                   <button
-                    onClick={() => activeTab === "trending" ? fetchTrending() : setIsSearchOpen(true)}
-                    disabled={loading || isSearching}
+                    onClick={fetchTrending}
+                    disabled={loading}
                     className="relative overflow-hidden flex items-center justify-center min-w-[80px] h-7 bg-apple-accent text-white rounded-full text-[10px] font-extrabold shadow-sm active:scale-95 disabled:bg-apple-accent/50 transition-all font-sans"
                   >
-                    <div className={`flex items-center space-x-1.5 px-3 transition-transform duration-300 ${loading || isSearching ? "-translate-y-8" : "translate-y-0"}`}>
-                      {activeTab === "trending" ? (
-                        <>
-                          <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="4" strokeLinecap="round" strokeLinejoin="round">
-                            <path d="M21 12a9 9 0 1 1-6.219-8.56" />
-                            <path d="M22 10V3h-7" />
-                          </svg>
-                          <span>REFRESH</span>
-                        </>
-                      ) : (
-                        <span>RE-SEARCH</span>
-                      )}
+                    <div className={`flex items-center space-x-1.5 px-3 transition-transform duration-300 ${loading ? "-translate-y-8" : "translate-y-0"}`}>
+                      <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="4" strokeLinecap="round" strokeLinejoin="round">
+                        <path d="M21 12a9 9 0 1 1-6.219-8.56" />
+                        <path d="M22 10V3h-7" />
+                      </svg>
+                      <span>REFRESH</span>
                     </div>
-                    <div className={`absolute flex items-center space-x-1 transition-transform duration-300 ${loading || isSearching ? "translate-y-0" : "translate-y-8"}`}>
+                    <div className={`absolute flex items-center space-x-1 transition-transform duration-300 ${loading ? "translate-y-0" : "translate-y-8"}`}>
                       <svg className="animate-spin" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="4" strokeLinecap="round" strokeLinejoin="round">
                         <path d="M21 12a9 9 0 1 1-6.219-8.56" />
                       </svg>
@@ -354,13 +572,13 @@ function App() {
               </header>
 
               <div className="flex-1 overflow-y-auto divide-y divide-apple-border/20 bg-apple-bg/5 scrollbar-hide">
-                {(loading || isSearching) && repos.length === 0 && (
+                {loading && repos.length === 0 && (
                   <div className="p-24 text-center">
                     <div className="flex justify-center mb-4">
                       <div className="w-8 h-8 rounded-full border-2 border-apple-accent/20 border-t-apple-accent animate-spin"></div>
                     </div>
                     <p className="text-apple-secondary text-[11px] font-bold tracking-widest animate-pulse font-sans">
-                      正在通过智能意图分析检索全球项目...
+                      正在加载热门项目...
                     </p>
                   </div>
                 )}
@@ -390,7 +608,7 @@ function App() {
                         {repo.stars}
                       </div>
                       <div className="text-apple-accent">
-                        {repo.stars_today ? `+${repo.stars_today.split(" ")[0]} 🚀` : "Found ✨"}
+                        {repo.stars_today ? `+${repo.stars_today.split(" ")[0]} 🚀` : ""}
                       </div>
                     </div>
                   </div>
@@ -462,7 +680,7 @@ function App() {
 
                       <article>
                         {insight ? (
-                          <div className="whitespace-pre-wrap text-[15px] leading-relaxed text-apple-text animate-in fade-in slide-in-from-bottom-3 duration-700 bg-apple-bg/5 p-8 rounded-3xl border border-apple-border/40 selection:bg-apple-accent/20">
+                          <div className="whitespace-pre-wrap text-[15px] leading-relaxed text-apple-text bg-apple-bg/5 p-8 rounded-3xl border border-apple-border/40 selection:bg-apple-accent/20">
                             {insight}
                           </div>
                         ) : (
@@ -475,11 +693,17 @@ function App() {
                                 <button onClick={() => setActiveTab("settings")} className="mt-6 px-6 py-2.5 bg-apple-accent text-white text-[11px] font-extrabold rounded-full hover:shadow-lg transition-all active:scale-95 font-sans">前往设置 →</button>
                               </div>
                             ) : (
-                              <div className="space-y-5 px-4">
-                                <div className="h-4 bg-apple-bg rounded-full w-full animate-pulse"></div>
-                                <div className="h-4 bg-apple-bg rounded-full w-[90%] animate-pulse [animation-delay:0.2s]"></div>
-                                <div className="h-4 bg-apple-bg rounded-full w-[95%] animate-pulse [animation-delay:0.4s]"></div>
-                                <div className="h-4 bg-apple-bg rounded-full w-[85%] animate-pulse [animation-delay:0.6s]"></div>
+                              <div className="flex flex-col items-center justify-center py-20 bg-apple-bg/20 rounded-3xl border border-dashed border-apple-border">
+                                <div className="w-16 h-16 bg-white rounded-2xl flex items-center justify-center mb-6 shadow-md text-3xl">🤖</div>
+                                <p className="text-apple-text text-sm font-bold tracking-tight">点击生成 AI 深度洞察</p>
+                                <p className="text-apple-secondary text-xs mt-2 opacity-70">我们将结合大模型剖析项目的技术架构与核心价值</p>
+                                <button
+                                  onClick={() => selectedRepo && handleSummarize(selectedRepo)}
+                                  disabled={isSummarizing}
+                                  className="mt-6 px-6 py-2.5 bg-apple-accent text-white text-[11px] font-extrabold rounded-full hover:shadow-lg transition-all active:scale-95 disabled:opacity-50 font-sans"
+                                >
+                                  {isSummarizing ? "正在分析..." : "生成 AI 洞察 ✨"}
+                                </button>
                               </div>
                             )}
                           </div>

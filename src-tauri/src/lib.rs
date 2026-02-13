@@ -21,7 +21,8 @@ pub fn run() {
             greet,
             trending::get_trending,
             ai::summarize_repo,
-            search::smart_search
+            search::ai_rewrite_query,
+            search::search_github
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

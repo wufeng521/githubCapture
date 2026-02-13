@@ -1,4 +1,4 @@
-use serde::{Deserialize, Serialize};
+use serde::Deserialize;
 use reqwest::header::{HeaderMap, HeaderValue, USER_AGENT};
 use crate::trending::TrendingRepo;
 
@@ -17,40 +17,37 @@ struct GithubRepoItem {
     html_url: String,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
-pub struct SearchResult {
-    pub repo: TrendingRepo,
-}
-
+/// AI 改写用户查询：将口语化意图转换为 GitHub 搜索语法
 #[tauri::command]
-pub async fn smart_search(query: String, api_key: String) -> Result<Vec<TrendingRepo>, String> {
-    // 1. 调用 LLM 解析意图 (简易版实现，未来可扩展为完整 Prompt)
-    // 这里我们先实现基础的 GitHub Search 调用，
-    // 如果 query 看起来像口语，可以先通过 LLM 转义。
-    
-    let github_query = if query.len() > 20 || query.contains(' ') {
-        parse_intent_with_llm(&query, &api_key).await.unwrap_or(query)
-    } else {
-        query
-    };
+pub async fn ai_rewrite_query(query: String, api_key: String) -> Result<String, String> {
+    if api_key.is_empty() {
+        return Err("API Key 未配置，请在设置中填写".to_string());
+    }
 
-    search_github_repositories(&github_query).await
-}
-
-async fn parse_intent_with_llm(user_input: &str, api_key: &str) -> Option<String> {
     let client = reqwest::Client::new();
     let prompt = format!(
-        "Translate the following user intent into a GitHub search query string. \
-        Only return the query string, no explanation. \
-        Example: 'beginner friendly rust ai' -> 'topic:ai language:rust stars:<5000' \
-        Intent: '{}'", 
-        user_input
+        "You are a GitHub search query optimizer. Convert the following natural language intent \
+        into a precise GitHub search query string using qualifiers like language:, topic:, stars:, pushed:, etc.\n\
+        Rules:\n\
+        - Only return the query string, nothing else\n\
+        - Keep it concise but precise\n\
+        - Use appropriate qualifiers based on the intent\n\
+        - If language is mentioned, use language: qualifier\n\
+        - If popularity is implied, use stars: qualifier\n\
+        - If recency matters, use pushed: qualifier\n\n\
+        Examples:\n\
+        Input: '适合初学者的 Rust AI 项目' -> 'language:rust topic:ai good-first-issues:>0 stars:>100'\n\
+        Input: '最近很火的 React UI 组件库' -> 'language:typescript topic:react topic:ui stars:>1000 pushed:>2025-01-01'\n\
+        Input: 'golang web framework' -> 'language:go topic:web-framework stars:>500'\n\n\
+        Intent: '{}'",
+        query
     );
 
     let body = serde_json::json!({
         "model": "gpt-3.5-turbo",
         "messages": [{"role": "user", "content": prompt}],
-        "temperature": 0.3
+        "temperature": 0.2,
+        "max_tokens": 200
     });
 
     let res = client.post("https://api.openai.com/v1/chat/completions")
@@ -58,32 +55,49 @@ async fn parse_intent_with_llm(user_input: &str, api_key: &str) -> Option<String
         .json(&body)
         .send()
         .await
-        .ok()?;
+        .map_err(|e| format!("网络请求失败: {}", e))?;
 
-    let json: serde_json::Value = res.json().await.ok()?;
-    let content = json["choices"][0]["message"]["content"].as_str()?.trim().to_string();
-    
-    Some(content)
+    if !res.status().is_success() {
+        return Err(format!("OpenAI API 错误: {}", res.status()));
+    }
+
+    let json: serde_json::Value = res.json().await.map_err(|e| format!("解析响应失败: {}", e))?;
+    let content = json["choices"][0]["message"]["content"]
+        .as_str()
+        .ok_or("AI 返回内容为空")?
+        .trim()
+        .to_string();
+
+    Ok(content)
+}
+
+/// 直接搜索 GitHub 仓库（不经过 AI 改写）
+#[tauri::command]
+pub async fn search_github(query: String) -> Result<Vec<TrendingRepo>, String> {
+    search_github_repositories(&query).await
 }
 
 async fn search_github_repositories(query: &str) -> Result<Vec<TrendingRepo>, String> {
     let client = reqwest::Client::new();
     let mut headers = HeaderMap::new();
     headers.insert(USER_AGENT, HeaderValue::from_static("github-capture-app"));
-    
-    let url = format!("https://api.github.com/search/repositories?q={}&sort=stars&order=desc", urlencoding::encode(query));
+
+    let url = format!(
+        "https://api.github.com/search/repositories?q={}&sort=stars&order=desc&per_page=20",
+        urlencoding::encode(query)
+    );
 
     let res = client.get(&url)
         .headers(headers)
         .send()
         .await
-        .map_err(|e| e.to_string())?;
+        .map_err(|e| format!("GitHub API 请求失败: {}", e))?;
 
     if !res.status().is_success() {
-        return Err(format!("GitHub API Error: {}", res.status()));
+        return Err(format!("GitHub API 错误: {}", res.status()));
     }
 
-    let search_res: GithubSearchResponse = res.json().await.map_err(|e| e.to_string())?;
+    let search_res: GithubSearchResponse = res.json().await.map_err(|e| format!("解析失败: {}", e))?;
 
     let repos = search_res.items.into_iter().map(|item| {
         let parts: Vec<&str> = item.full_name.split('/').collect();
@@ -94,7 +108,7 @@ async fn search_github_repositories(query: &str) -> Result<Vec<TrendingRepo>, St
             language: item.language.unwrap_or_else(|| "Unknown".to_string()),
             stars: format_number(item.stargazers_count),
             forks: format_number(item.forks_count),
-            stars_today: "".to_string(), // 搜索结果不直接提供今日星数增量
+            stars_today: "".to_string(),
             url: item.html_url,
             topic: "Search Result".to_string(),
         }
